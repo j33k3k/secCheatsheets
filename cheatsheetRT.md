@@ -1,4 +1,4 @@
-# PEN-200 Offensive Security Cheatsheet
+# Offensive Security Cheatsheet
 > **Usage:** Replace `<IP>`, `<USER>`, `<PASS>`, `<LHOST>`, `<LPORT>` with your values. Commands marked `[win]` run on Windows targets/sessions; `[lin]` on Linux.
 
 ---
