@@ -27,7 +27,7 @@
 
 ---
 
-## 1. WINDOWS EVENT LOGS (Dark Green)
+## 1. WINDOWS EVENT LOGS (🟩)
 
 ### 1.1 EVT / EVTX
 **What:** Primary Windows event log format (.evtx). Contains Security, System, Application, and hundreds of operational logs.
