@@ -2,7 +2,6 @@
 
 **Source:** Windows DFIR Artifacts MindMap (by @netbiosX)
 **Toolset:** DFIRWS Win11 Forensics VM (352 tools)
-**Date Generated:** 2026-05-29
 
 ---
 
