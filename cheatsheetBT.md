@@ -25,7 +25,7 @@
 | 🟣 Purple circle | Lateral Movement |
 | 🩷 Pink circle | Data Exfiltration |
 
-<img width="1995" height="1401" alt="image" src="https://github.com/user-attachments/assets/d240b485-7199-4ef1-b954-cda99fa6f01f" />
+<img width="2195" height="1601" alt="image" src="https://github.com/user-attachments/assets/d240b485-7199-4ef1-b954-cda99fa6f01f" />
 
 
 ---
