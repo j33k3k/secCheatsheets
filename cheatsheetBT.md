@@ -25,6 +25,8 @@
 | 🟣 Purple circle | Lateral Movement |
 | 🩷 Pink circle | Data Exfiltration |
 
+<img width="1203" height="840" alt="image" src="https://github.com/user-attachments/assets/ab57331e-f499-42e0-a7f8-06b789c39d90" />
+
 ---
 
 ## 1. WINDOWS EVENT LOGS (🟩)
