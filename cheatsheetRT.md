@@ -1077,7 +1077,7 @@ socat TCP-LISTEN:2345,fork TCP:10.10.10.5:5432
 ### SSH Local Port Forward
 ```bash
 # Expose internal port through SSH tunnel to Kali
-ssh -N -L <LOCAL_PORT>:<DEST_IP>:<DEST_PORT> <USER>@<PIVOT_IP>
+ssh -N -L <LOCAL_PORT>:<LOCALHOST>:<DEST_PORT> <USER>@<PIVOT_IP>
 # Example: access RDP on internal host via Kali:13389
 ssh -N -L 13389:10.10.10.10:3389 user@192.168.1.50
 xfreerdp /v:127.0.0.1:13389 /u:<USER> /p:<PASS>
