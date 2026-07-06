@@ -229,7 +229,7 @@ dnsrecon -d target.com -t std
 dnsenum target.com
 
 # Bruteforce subdomains
-gobuster dns -d target.com -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -t 20
+gobuster dns --domain target.com -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt
 dnsrecon -d target.com -D wordlist.txt -t brt
 
 # Windows
