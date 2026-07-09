@@ -165,8 +165,11 @@ https://www.ssllabs.com/ssltest/
 ### Nmap
 
 ```bash
-# Host discovery sweep
+ # Host discovery sweep
 sudo nmap -sn <network>/24
+
+# Quick Port discovery
+nmap -p- --min-rate 5000 -T4 <IP>
 
 # Quick TCP scan (top 1000 ports)
 nmap -sC -sV -v <IP>
